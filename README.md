@@ -14,69 +14,161 @@
 
 Welcome to **Selenops**, a Swift Web Crawler.
 
-Given a webpage url and a word to search, Selenops will look for said word in that page, and all pages linked in there, recursively.
+Selenops is a lightweight, Swift-based web crawler that efficiently searches for specific words across web pages. Built with Swift Concurrency, it provides a safe and performant way to crawl websites.
+
+## Features
+
+- ✨ Built with Swift Concurrency (async/await)
+- 🔍 Efficient word search across web pages
+- 🛡️ Safe concurrent operations with Actor model
+- 🎯 Domain-specific crawling
+- 📊 Progress tracking
+- 🔌 Extensible delegate pattern for data management
+- 📱 Command-line interface tool included
+
+## Requirements
+
+- Swift 6.0+
+- iOS 18.0+
+- macOS 15.0+
+
+## Installation
+
+### Swift Package Manager
+
+Add Selenops as a dependency to your `Package.swift` file:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/1amageek/Selenops.git", from: "1.0.0")
+]
+```
+
+### Command Line Tool
+
+To install the command-line tool:
+
+1. Clone the repository
+2. Run `swift build -c release`
+3. The binary will be located at `.build/release/selenops-cli`
+
+You can install it globally by copying it to your path:
+```bash
+sudo cp .build/release/selenops-cli /usr/local/bin/selenops
+```
 
 ## Usage
+
+### As a Library
 
 ```swift
 import Selenops
 
-// Initialize crawler.
-let crawler = Crawler(
-  startURL: URL(string: "https://fivestars.blog/")!,
-  maximumPagesToVisit: 10,
-  wordToSearch: "Swift" // Specify the word to search here.
+// Create an executor
+let executor = Executor(
+    startUrl: URL(string: "https://example.com")!,
+    wordToSearch: "swift",
+    maximumPagesToVisit: 100
 )
 
-// Set delegate.
-crawler.delegate = ... // Needs to conform to CrawlerDelegate
-
-// Start crawling!
-crawler.start()
+// Start crawling
+await executor.run()
 ```
 
-The `crawler` delegate will get information such as visited webpages, and in which webpages the specified word has been found.
+### Command Line Interface
 
-## Installation
+```bash
+# Basic usage
+selenops-cli crawl --url https://example.com --word swift --max-pages 100
 
-Selenops is distributed via the [Swift Package Manager](https://swift.org/package-manager):  
+# Show help
+selenops-cli --help
+```
 
-- to use it into an app, follow [this tutorial](https://developer.apple.com/documentation/swift_packages/adding_package_dependencies_to_your_app) and use this repository URL: `https://github.com/zntfdr/Selenops.git`.
+### Custom Implementation
 
-- to use it in a package, add it as a dependency in your `Package.swift`:
+You can create your own crawler delegate by conforming to the `CrawlerDelegate` protocol:
+
 ```swift
- let package = Package(
-     ...
-     dependencies: [
-         .package(url: "https://github.com/zntfdr/Selenops.git", from: "2.0.0")
-     ],
-     targets: [
-        .target(
-            ...
-            dependencies: ["Selenops"])
-     ],
-     ...
- )
+actor CustomCrawlerDelegate: CrawlerDelegate {
+    private var visitedPages: Set<URL> = []
+    private var pagesToVisit: Set<URL> = []
+    
+    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Bool {
+        // Your URL filtering logic
+        return true
+    }
+    
+    func crawler(_ crawler: Crawler, didFindWordAt url: URL) {
+        // Handle found word
+        print("Found word at: \(url)")
+    }
+    
+    // Implement other required methods...
+}
+
+// Use your custom delegate
+let crawler = Crawler(
+    startURL: URL(string: "https://example.com")!,
+    maximumPagesToVisit: 100,
+    wordToSearch: "swift"
+)
+
+let delegate = CustomCrawlerDelegate()
+await crawler.setDelegate(delegate)
+await crawler.start()
 ```
-  ...and then use `import Selenops` whenever necessary.
 
-## Command line tool
-<p align="center">
-    <img src="cli-example.gif" max-width="90%" alt="Swift Web Crawler in action" />
+## Features
 
-Selenops also comes with a command line tool that showcases its functionality.
+### Domain-Specific Crawling
 
-To install it, clone the project and run make:
+By default, Selenops only crawls URLs within the same domain as the start URL. This behavior can be customized by implementing your own `shouldVisitUrl` logic in the delegate.
 
-```shell
-$ git clone https://github.com/zntfdr/Selenops.git
-$ cd Selenops
-$ make
+### Progress Tracking
+
+Selenops provides detailed progress tracking through its delegate methods:
+
+```swift
+func crawler(_ crawler: Crawler, willVisitUrl url: URL) {
+    print("Currently visiting: \(url)")
+}
+
+func crawlerDidFinish(_ crawler: Crawler) {
+    print("Crawling completed")
+}
 ```
+
+### Data Management
+
+The delegate pattern allows for flexible data storage solutions:
+
+- In-memory storage
+- Database storage
+- Distributed storage
+- Custom storage solutions
+
+## Dependencies
+
+- [SwiftSoup](https://github.com/scinfu/SwiftSoup) - HTML Parser
+- [Swift Argument Parser](https://github.com/apple/swift-argument-parser) - Command-line interface support
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+Selenops is available under the MIT license. See the LICENSE file for more info.
+
+## Why "Selenops"?
+
+Selenops is named after a genus of spiders known for their speed and agility. Like its namesake, this crawler is designed to be fast and efficient in navigating web content.
 
 ## Credits
 
 Selenops was built by [Federico Zanetello](https://twitter.com/zntfdr) as an [example of a Swift script][selenopsArticle].
+[@1amageek](https://github.com/1amageek)
 
 ## Contributions and Support
 
