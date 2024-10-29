@@ -1,16 +1,19 @@
-import Foundation
 import ArgumentParser
+import Foundation
 
-struct Selenops: ParsableCommand {
-    static var configuration = CommandConfiguration(
-        abstract: "Searches for the given word on the web."
+@main
+struct Selenops: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "selenops",
+        abstract: "Searches for the given word on the web.",
+        version: "1.0.0"
     )
     
     @Option(
         name: [.short, .customLong("start")],
         help: "The starting page URL (must have http:// or https:// prefix)."
     )
-    var startUrl: URL
+    var startUrl: String
     
     @Option(
         name: [.short, .customLong("word")],
@@ -20,22 +23,27 @@ struct Selenops: ParsableCommand {
     
     @Option(
         name: [.short, .customLong("max")],
-        default: 10,
         help: "The maximum number of pages to visit."
     )
-    var maximumPagesToVisit: Int
+    var maximumPagesToVisit: Int = 10
     
-    func run() throws {
+    mutating func run() async throws {
+
+        guard let url = URL(string: startUrl) else {
+            throw ValidationError("Invalid URL format")
+        }
+        
         print("✅ Searching for: \(wordToSearch)")
-        print("✅ Starting from: \(startUrl.absoluteString)")
+        print("✅ Starting from: \(url.absoluteString)")
         print("✅ Maximum number of pages to visit: \(maximumPagesToVisit)")
         
-        Executor(
-            startUrl: startUrl,
+        let executor = Executor(
+            startUrl: url,
             wordToSearch: wordToSearch,
             maximumPagesToVisit: maximumPagesToVisit
-        ).run()
+        )
+        
+        await executor.run()
     }
 }
 
-Selenops.main()

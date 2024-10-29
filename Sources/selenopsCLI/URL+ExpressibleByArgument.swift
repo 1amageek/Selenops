@@ -1,7 +1,7 @@
 import Foundation
 import ArgumentParser
 
-extension URL: ExpressibleByArgument {
+extension URL: @retroactive ExpressibleByArgument {
     
     public init?(argument: String) {
         guard
