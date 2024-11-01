@@ -21,13 +21,6 @@ public protocol CrawlerDelegate: Actor {
     ///   - url: The URL to be visited.
     func crawler(_ crawler: Crawler, willVisitUrl url: URL)
     
-    /// Notifies the delegate that the crawler found the search word at the specified URL.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler that found the word.
-    ///   - url: The URL where the word was found.
-    func crawler(_ crawler: Crawler, didFindWordAt url: URL)
-    
     /// Notifies the delegate that the crawler has finished its execution.
     ///
     /// - Parameter crawler: The crawler that finished execution.
@@ -54,12 +47,13 @@ public protocol CrawlerDelegate: Actor {
     ///   - url: The URL that was visited.
     func crawler(_ crawler: Crawler, didVisit url: URL) async
     
-    /// Adds new URLs discovered during crawling.
+    /// Adds new links discovered during crawling.
     ///
     /// - Parameters:
-    ///   - crawler: The crawler that found the URLs.
-    ///   - urls: An array of newly discovered URLs.
-    func crawler(_ crawler: Crawler, didFind urls: [URL]) async
+    ///   - crawler: The crawler that found the links.
+    ///   - links: An array of `Link` objects containing URLs, titles, and optional scores.
+    ///   - url: The URL of the page where the links were found.
+    func crawler(_ crawler: Crawler, didFindLinks links: Set<Link>, at url: URL) async
     
     /// Checks if a URL has already been visited.
     ///
@@ -139,7 +133,6 @@ public actor Crawler {
     /// The crawler will continue until either the maximum number of pages
     /// has been visited or there are no more pages to visit.
     public func start() async {
-        await delegate?.crawler(self, didFind: [startURL])
         await crawl()
     }
     
@@ -197,19 +190,50 @@ public actor Crawler {
     private func parse(_ webpage: String, url: URL) async {
         do {
             let document = try SwiftSoup.parse(webpage, url.absoluteString)
+            let anchorElements = try document.select("a").array()
+            var links: Set<Link> = []
             
-            if let webpageText = try? document.text(),
-               webpageText.range(of: wordToSearch, options: .caseInsensitive) != nil {
-                await delegate?.crawler(self, didFindWordAt: url)
+            // Get base host to use as a reference if needed
+            let baseHost = url.host
+            
+            for anchor in anchorElements {
+                // Retrieve the href attribute and interpret it as a URL
+                let href = try anchor.attr("href")
+                guard let resolvedURL = URL(string: href, relativeTo: url)?.absoluteURL else { continue }
+                
+                // If a base host is available, use it as a filter criterion
+                if let resolvedHost = resolvedURL.host, let baseHost = baseHost, resolvedHost != baseHost {
+                    continue
+                }
+                
+                // Normalize the URL by removing fragments and query parameters
+                var urlComponents = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: true)
+                urlComponents?.fragment = nil
+                urlComponents?.query = nil
+                
+                guard let normalizedURL = urlComponents?.url else { continue }
+                
+                // Determine title based on priority: aria-label > link text > img alt > title attribute
+                var title = try anchor.attr("aria-label").trimmingCharacters(in: .whitespacesAndNewlines)
+                if title.isEmpty { title = try anchor.text().trimmingCharacters(in: .whitespacesAndNewlines) }
+                if title.isEmpty, let img = try anchor.select("img[alt]").first() {
+                    title = try img.attr("alt").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                if title.isEmpty { title = try anchor.attr("title").trimmingCharacters(in: .whitespacesAndNewlines) }
+                
+                // Skip link if title is empty
+                if title.isEmpty { continue }
+                let link = Link(url: normalizedURL, title: title, score: nil)
+                links.insert(link)
             }
             
-            let anchors = try document.select("a").array()
-            let links = anchors.compactMap { try? $0.absUrl("href") }.compactMap(URL.init(string:))
-            
-            await delegate?.crawler(self, didFind: links)
+            // Notify the delegate with the extracted links
+            await delegate?.crawler(self, didFindLinks: links, at: url)
             
         } catch {
             print("Error parsing \(url): \(error)")
         }
     }
+
+
 }
