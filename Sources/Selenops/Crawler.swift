@@ -39,13 +39,13 @@ public protocol CrawlerDelegate: Actor {
     /// - Returns: The next URL to visit, or `nil` if there are no more URLs to visit.
     func crawler(_ crawler: Crawler) async -> URL?
     
-    /// Notifies the delegate that the crawler has parsed content at the specified URL.
+    /// Notifies the delegate that the crawler has fetched raw content at the specified URL.
     ///
     /// - Parameters:
-    ///   - crawler: The crawler that parsed the content.
+    ///   - crawler: The crawler that fetched the content.
     ///   - url: The URL associated with the content.
-    ///   - content: The parsed content of the page.
-    func crawler(_ crawler: Crawler, didParseContent content: String, at url: URL) async
+    ///   - content: The raw HTML content of the page.
+    func crawler(_ crawler: Crawler, didFetchContent content: String, at url: URL) async
     
     /// Records that a URL has been visited by the crawler.
     ///
@@ -181,10 +181,9 @@ public actor Crawler {
                   let webpage = String(data: data, encoding: .utf8) else {
                 return
             }
-            
+            await delegate.crawler(self, didFetchContent: webpage, at: url)
             await parse(webpage, url: url)
             await delegate.crawler(self, didVisit: url)
-            
         } catch {
             print("Error visiting \(url): \(error)")
         }
