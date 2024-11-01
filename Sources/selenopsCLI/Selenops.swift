@@ -25,7 +25,7 @@ struct Selenops: AsyncParsableCommand {
         name: [.short, .customLong("max")],
         help: "The maximum number of pages to visit."
     )
-    var maximumPagesToVisit: Int = 10
+    var maximumPagesToVisit: Int = 20
     
     mutating func run() async throws {
 

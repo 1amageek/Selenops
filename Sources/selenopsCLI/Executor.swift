@@ -4,6 +4,7 @@ import Selenops
 
 /// An actor that executes web crawling operations.
 public actor Executor: CrawlerDelegate {
+
     /// The number of pages visited
     private var visitedPages: Set<URL> = []
     
@@ -37,14 +38,10 @@ public actor Executor: CrawlerDelegate {
     
     /// Starts the crawling process.
     public func run() async {
-        let crawler = Crawler(
-            startURL: startUrl,
-            maximumPagesToVisit: maximumPagesToVisit,
-            wordToSearch: wordToSearch
-        )
+        let crawler = Crawler()
         
         await crawler.setDelegate(self)
-        await crawler.start()
+        await crawler.start(url: startUrl)
     }
     
     // MARK: - CrawlerDelegate
@@ -72,6 +69,9 @@ public actor Executor: CrawlerDelegate {
     }
     
     public func crawler(_ crawler: Crawler) async -> URL? {
+        if visitedPages.count >= maximumPagesToVisit {
+            return nil
+        }
         return pagesToVisit.popFirst()
     }
     
@@ -89,5 +89,13 @@ public actor Executor: CrawlerDelegate {
     
     public func crawlerVisitedPagesCount(_ crawler: Crawler) async -> Int {
         return visitedPages.count
+    }
+    
+    public func crawler(_ crawler: Crawler, didFetchContent content: String, at url: URL) async {
+        
+    }
+    
+    public func crawler(_ crawler: Crawler, didFindLinks links: Set<Link>, at url: URL) async {
+        self.pagesToVisit = Set(links.map({ $0.url }))
     }
 }

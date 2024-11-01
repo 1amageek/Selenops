@@ -87,32 +87,15 @@ public protocol CrawlerDelegate: Actor {
 /// await crawler.start()
 /// ```
 public actor Crawler {
-    /// The URL where the crawling begins
-    public let startURL: URL
-    
-    /// The maximum number of pages the crawler will visit
-    public let maximumPagesToVisit: Int
-    
-    /// The word being searched for during crawling
-    public let wordToSearch: String
+
     
     /// The delegate that receives crawler events and manages data
     public weak var delegate: (any CrawlerDelegate)?
     
     /// Creates a new web crawler instance.
     ///
-    /// - Parameters:
-    ///   - startURL: The URL where crawling will begin.
-    ///   - maximumPagesToVisit: The maximum number of pages to visit.
-    ///   - word: The word to search for during crawling.
-    public init(
-        startURL: URL,
-        maximumPagesToVisit: Int,
-        wordToSearch word: String
-    ) {
-        self.startURL = startURL
-        self.maximumPagesToVisit = maximumPagesToVisit
-        self.wordToSearch = word
+    public init() {
+        
     }
     
     /// Sets the delegate for receiving crawler events and managing crawling data.
@@ -132,20 +115,22 @@ public actor Crawler {
     /// This method initiates the crawling process from the `startURL`.
     /// The crawler will continue until either the maximum number of pages
     /// has been visited or there are no more pages to visit.
-    public func start() async {
-        await crawl()
+    public func start(url: URL) async {
+        await crawl(url: url)
     }
     
     /// Performs the crawling operation.
     ///
     /// This method manages the main crawling loop, requesting URLs from the delegate
     /// and visiting pages until completion conditions are met.
-    private func crawl() async {
+    private func crawl(url: URL) async {
         guard let delegate = delegate else { return }
         
-        while await delegate.crawlerVisitedPagesCount(self) < maximumPagesToVisit,
-              let pageToVisit = await delegate.crawler(self) {
-            
+        if await delegate.crawler(self, shouldVisitUrl: url) {
+            await visit(page: url)
+        }
+        
+        while let pageToVisit = await delegate.crawler(self) {
             if await delegate.crawler(self, hasVisited: pageToVisit) {
                 continue
             }
@@ -154,7 +139,6 @@ public actor Crawler {
                 await visit(page: pageToVisit)
             }
         }
-        
         await delegate.crawlerDidFinish(self)
     }
     
