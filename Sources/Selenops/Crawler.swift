@@ -53,7 +53,7 @@ public protocol CrawlerDelegate: Actor {
     ///   - crawler: The crawler that found the links.
     ///   - links: An array of `Link` objects containing URLs, titles, and optional scores.
     ///   - url: The URL of the page where the links were found.
-    func crawler(_ crawler: Crawler, didFindLinks links: Set<Link>, at url: URL) async
+    func crawler(_ crawler: Crawler, didFindLinks links: Set<Crawler.Link>, at url: URL) async
     
     /// Checks if a URL has already been visited.
     ///
@@ -218,6 +218,4 @@ public actor Crawler {
             print("Error parsing \(url): \(error)")
         }
     }
-
-
 }
