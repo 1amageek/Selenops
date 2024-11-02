@@ -62,12 +62,7 @@ public protocol CrawlerDelegate: Actor {
     ///   - url: The URL to check.
     /// - Returns: `true` if the URL has been visited, `false` otherwise.
     func crawler(_ crawler: Crawler, hasVisited url: URL) async -> Bool
-    
-    /// Provides the count of pages visited by the crawler.
-    ///
-    /// - Parameter crawler: The crawler requesting the count.
-    /// - Returns: The number of pages visited.
-    func crawlerVisitedPagesCount(_ crawler: Crawler) async -> Int
+
 }
 
 /// A web crawler that searches for specific words across web pages.
