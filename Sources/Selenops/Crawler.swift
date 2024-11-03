@@ -1,6 +1,14 @@
 import Foundation
 import SwiftSoup
 
+/// Errors that can occur during crawling
+public enum CrawlerError: Error {
+    case invalidResponse
+    case httpError(Int)
+    case invalidEncoding
+    case parseError(Error)
+}
+
 /// A protocol that receives crawler-related events and manages crawling data.
 ///
 /// Implement this protocol to receive notifications about crawler events and manage the crawler's data storage.
@@ -179,16 +187,26 @@ public actor Crawler {
             
             let (data, response) = try await URLSession.shared.data(from: url)
             
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode),
-                  let webpage = String(data: data, encoding: .utf8) else {
+            guard let httpResponse = response as? HTTPURLResponse else {
+                await delegate.crawler(self, didSkip: url, reason: .error(CrawlerError.invalidResponse))
                 return
             }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                await delegate.crawler(self, didSkip: url, reason: .error(CrawlerError.httpError(httpResponse.statusCode)))
+                return
+            }
+            
+            guard let webpage = String(data: data, encoding: .utf8) else {
+                await delegate.crawler(self, didSkip: url, reason: .error(CrawlerError.invalidEncoding))
+                return
+            }
+            
             await delegate.crawler(self, didFetchContent: webpage, at: url)
             await parse(webpage, url: url)
             await delegate.crawler(self, didVisit: url)
         } catch {
-            print("Error visiting \(url): \(error)")
+            await delegate.crawler(self, didSkip: url, reason: .error(error))
         }
     }
     
