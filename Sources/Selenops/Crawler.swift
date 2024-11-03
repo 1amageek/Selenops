@@ -9,10 +9,10 @@ public protocol CrawlerDelegate: Actor {
     /// Determines whether the crawler should visit the specified URL.
     ///
     /// - Parameters:
-    ///   - crawler: The crawler requesting the visit.
-    ///   - url: The URL to be visited.
-    /// - Returns: `true` if the crawler should visit the URL, `false` otherwise.
-    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Bool
+    ///   - crawler: The crawler requesting permission to visit.
+    ///   - url: The URL to potentially visit.
+    /// - Returns: `.visit` if the URL should be visited, or `.skip` with a reason if it should be skipped.
+    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Crawler.Decision
     
     /// Notifies the delegate that the crawler will visit the specified URL.
     ///
@@ -55,13 +55,16 @@ public protocol CrawlerDelegate: Actor {
     ///   - url: The URL of the page where the links were found.
     func crawler(_ crawler: Crawler, didFindLinks links: Set<Crawler.Link>, at url: URL) async
     
-    /// Checks if a URL has already been visited.
+
+    /// Notifies the delegate that the crawler has skipped the specified URL.
+    ///
+    /// Called when `shouldVisitUrl` returns `false` or when the URL is determined to be invalid.
     ///
     /// - Parameters:
-    ///   - crawler: The crawler making the check.
-    ///   - url: The URL to check.
-    /// - Returns: `true` if the URL has been visited, `false` otherwise.
-    func crawler(_ crawler: Crawler, hasVisited url: URL) async -> Bool
+    ///   - crawler: The crawler that skipped the URL.
+    ///   - url: The URL that was skipped.
+    ///   - reason: The reason why the URL was skipped.
+    func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async
 
 }
 
@@ -82,6 +85,31 @@ public protocol CrawlerDelegate: Actor {
 /// await crawler.start()
 /// ```
 public actor Crawler {
+    
+    /// Represents the decision whether to crawl a URL or skip it.
+    public enum Decision: Sendable {
+        /// The URL should be visited
+        case visit
+        /// The URL should be skipped for the specified reason
+        case skip(SkipReason)
+    }
+    
+    /// Represents reasons why a URL might be skipped during crawling.
+    public enum SkipReason: Sendable {
+        /// The URL was invalid or malformed
+        case invalidURL
+        
+        /// The URL points to an unsupported file type
+        case unsupportedFileType
+        
+        /// The URL was skipped due to business logic rules
+        /// - Parameter reason: A description of why the URL was skipped
+        case businessLogic(String)
+        
+        /// The URL was skipped due to an error
+        /// - Parameter error: The error that caused the skip
+        case error(Error)
+    }
 
     
     /// The delegate that receives crawler events and manages data
@@ -121,17 +149,20 @@ public actor Crawler {
     private func crawl(url: URL) async {
         guard let delegate = delegate else { return }
         
-        if await delegate.crawler(self, shouldVisitUrl: url) {
+        switch await delegate.crawler(self, shouldVisitUrl: url) {
+        case .visit:
             await visit(page: url)
+        case .skip(let reason):
+            await delegate.crawler(self, didSkip: url, reason: reason)
         }
         
         while let pageToVisit = await delegate.crawler(self) {
-            if await delegate.crawler(self, hasVisited: pageToVisit) {
-                continue
-            }
-            
-            if await delegate.crawler(self, shouldVisitUrl: pageToVisit) {
+            switch await delegate.crawler(self, shouldVisitUrl: pageToVisit) {
+            case .visit:
                 await visit(page: pageToVisit)
+            case .skip(let reason):
+                await delegate.crawler(self, didSkip: pageToVisit, reason: reason)
+                continue
             }
         }
         await delegate.crawlerDidFinish(self)
