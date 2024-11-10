@@ -241,16 +241,26 @@ public actor Crawler {
                 
                 guard let normalizedURL = urlComponents?.url else { continue }
                 
-                // Determine title based on priority: aria-label > link text > img alt > title attribute
+                // Determine title based on priority: aria-label > img[alt] > title > text content > normalized URL
                 var title = try anchor.attr("aria-label").trimmingCharacters(in: .whitespacesAndNewlines)
-                if title.isEmpty { title = try anchor.text().trimmingCharacters(in: .whitespacesAndNewlines) }
+                
                 if title.isEmpty, let img = try anchor.select("img[alt]").first() {
                     title = try img.attr("alt").trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                if title.isEmpty { title = try anchor.attr("title").trimmingCharacters(in: .whitespacesAndNewlines) }
                 
-                // Skip link if title is empty
-                if title.isEmpty { continue }
+                if title.isEmpty {
+                    title = try anchor.attr("title").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                
+                if title.isEmpty {
+                    title = try anchor.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                
+                // If no title is found, use the normalized URL as the title
+                if title.isEmpty {
+                    title = normalizedURL.absoluteString
+                }
+                
                 let link = Link(url: normalizedURL, title: title, score: nil)
                 links.insert(link)
             }
