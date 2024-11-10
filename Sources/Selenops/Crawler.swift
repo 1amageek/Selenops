@@ -32,7 +32,7 @@ public protocol CrawlerDelegate: Actor {
     /// Notifies the delegate that the crawler has finished its execution.
     ///
     /// - Parameter crawler: The crawler that finished execution.
-    func crawlerDidFinish(_ crawler: Crawler)
+    func crawlerDidFinish(_ crawler: Crawler) async
     
     /// Provides the next URL to be visited by the crawler.
     ///
