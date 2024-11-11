@@ -8,7 +8,7 @@ let package = Package(
     platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         .library(name: "Selenops", targets: ["Selenops"]),
-        .executable(name: "selenops-cli", targets: ["selenopsCLI"])
+        .executable(name: "selenops-cli", targets: ["SelenopsCLI"])
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", .upToNextMinor(from: "2.7.5")),
@@ -19,7 +19,7 @@ let package = Package(
             name: "Selenops",
             dependencies: ["SwiftSoup"]),
         .executableTarget(
-            name: "selenopsCLI",
+            name: "SelenopsCLI",
             dependencies: [
                 "Selenops",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")

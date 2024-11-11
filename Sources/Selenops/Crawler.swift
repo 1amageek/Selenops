@@ -197,7 +197,10 @@ public actor Crawler {
                 return
             }
             
-            guard let webpage = String(data: data, encoding: .utf8) else {
+            // Get encoding from Content-Type header
+            let encoding = detectEncoding(from: httpResponse, data: data)
+            
+            guard let webpage = String(data: data, encoding: encoding) else {
                 await delegate.crawler(self, didSkip: url, reason: .error(CrawlerError.invalidEncoding))
                 return
             }
@@ -271,5 +274,49 @@ public actor Crawler {
         } catch {
             print("Error parsing \(url): \(error)")
         }
+    }
+    
+    // Detect encoding from Content-Type header and meta tags
+    private func detectEncoding(from response: HTTPURLResponse, data: Data) -> String.Encoding {
+        // First, try to get encoding from Content-Type header
+        if let contentType = response.value(forHTTPHeaderField: "Content-Type"),
+           let charset = contentType.components(separatedBy: "charset=").last?.trimmingCharacters(in: .whitespaces) {
+            switch charset.lowercased() {
+            case "shift_jis", "shift-jis", "shiftjis":
+                return .shiftJIS
+            case "euc-jp":
+                return .japaneseEUC
+            case "iso-2022-jp":
+                return .iso2022JP
+            case "utf-8":
+                return .utf8
+            default:
+                break
+            }
+        }
+        
+        // If Content-Type header doesn't specify encoding, try to detect from meta tags
+        if let content = String(data: data, encoding: .ascii),
+           let metaCharset = content.range(of: "charset=", options: [.caseInsensitive]) {
+            let startIndex = metaCharset.upperBound
+            let endIndex = content[startIndex...].firstIndex(where: { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "_" }) ?? content.endIndex
+            let charset = content[startIndex..<endIndex].lowercased()
+            
+            switch charset {
+            case "shift_jis", "shift-jis", "shiftjis":
+                return .shiftJIS
+            case "euc-jp":
+                return .japaneseEUC
+            case "iso-2022-jp":
+                return .iso2022JP
+            case "utf-8":
+                return .utf8
+            default:
+                break
+            }
+        }
+        
+        // Default to UTF-8 if no encoding is specified
+        return .utf8
     }
 }
