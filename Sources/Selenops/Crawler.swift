@@ -240,7 +240,6 @@ public actor Crawler {
                 // Normalize the URL by removing fragments and query parameters
                 var urlComponents = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: true)
                 urlComponents?.fragment = nil
-                urlComponents?.query = nil
                 
                 guard let normalizedURL = urlComponents?.url else { continue }
                 
