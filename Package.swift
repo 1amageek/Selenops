@@ -11,8 +11,8 @@ let package = Package(
         .executable(name: "selenops-cli", targets: ["selenopsCLI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/scinfu/SwiftSoup.git", .upToNextMinor(from: "2.7.5")),
-        .package(url: "https://github.com/apple/swift-argument-parser.git", branch: "main")
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.7"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0")
     ],
     targets: [
         .target(

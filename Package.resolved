@@ -1,13 +1,13 @@
 {
-  "originHash" : "85b531b0c6c773da534c49137285dae6fdac1fd947ba2e1972394bd9d7ea2dbe",
+  "originHash" : "249bd254428ec97c8b1e6110503d19660d59104e53924eda8e3c0b1d4c627c57",
   "pins" : [
     {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "72bf21248fb6fbc146dc992fbf01c2e935377455"
+        "revision" : "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+        "version" : "1.7.0"
       }
     },
     {
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/scinfu/SwiftSoup.git",
       "state" : {
-        "revision" : "3c2c7e1e72b8abd96eafbae80323c5c1e5317437",
-        "version" : "2.7.5"
+        "revision" : "6b4930da67b462d3f200472c902dd016d37a554d",
+        "version" : "2.7.7"
       }
     }
   ],
