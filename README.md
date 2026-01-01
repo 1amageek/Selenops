@@ -2,7 +2,7 @@
 <p align="center">
     <img src="logo.png" width="580" max-width="90%" alt="Selenops logo" />
     <br/>
-    <img src="https://img.shields.io/badge/swift-5.1-orange.svg" />
+    <img src="https://img.shields.io/badge/swift-6.0-orange.svg" />
     <a href="https://swift.org/package-manager">
         <img src="https://img.shields.io/badge/swiftpm-compatible-brightgreen.svg?style=flat" alt="Swift Package Manager" />
     </a>
@@ -90,33 +90,94 @@ selenops-cli --help
 You can create your own crawler delegate by conforming to the `CrawlerDelegate` protocol:
 
 ```swift
-actor CustomCrawlerDelegate: CrawlerDelegate {
+import Selenops
+
+actor MyCrawlerDelegate: CrawlerDelegate {
     private var visitedPages: Set<URL> = []
     private var pagesToVisit: Set<URL> = []
-    
-    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Bool {
-        // Your URL filtering logic
-        return true
+    let startUrl: URL
+    let maximumPagesToVisit: Int
+
+    init(startUrl: URL, maximumPagesToVisit: Int) {
+        self.startUrl = startUrl
+        self.maximumPagesToVisit = maximumPagesToVisit
     }
-    
-    func crawler(_ crawler: Crawler, didFindWordAt url: URL) {
-        // Handle found word
-        print("Found word at: \(url)")
+
+    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) async -> Crawler.Decision {
+        guard let startHost = startUrl.host, let urlHost = url.host else {
+            return .skip(.invalidURL)
+        }
+
+        if urlHost != startHost {
+            return .skip(.businessLogic("Different domain"))
+        }
+
+        if visitedPages.count >= maximumPagesToVisit {
+            return .skip(.businessLogic("Maximum pages limit reached"))
+        }
+
+        if visitedPages.contains(url) {
+            return .skip(.businessLogic("Already visited"))
+        }
+
+        return .visit
     }
-    
-    // Implement other required methods...
+
+    func crawler(_ crawler: Crawler, willVisitUrl url: URL) async {
+        print("Visiting: \(url)")
+    }
+
+    func crawler(_ crawler: Crawler, visit url: URL) async throws {
+        let (data, response) = try await URLSession.shared.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw CrawlerError.invalidResponse
+        }
+
+        let encoding = Crawler.detectEncoding(from: httpResponse, data: data)
+        guard let html = String(data: data, encoding: encoding) else {
+            throw CrawlerError.invalidEncoding
+        }
+
+        // Process your content here
+        // ...
+
+        // Parse and collect links
+        await crawler.parseLinks(from: html, at: url)
+    }
+
+    func crawler(_ crawler: Crawler, didVisit url: URL) async {
+        visitedPages.insert(url)
+    }
+
+    func crawler(_ crawler: Crawler, didFindLinks links: Set<Crawler.Link>, at url: URL) async {
+        let newUrls = links.map(\.url).filter { url in
+            !visitedPages.contains(url) && !pagesToVisit.contains(url)
+        }
+        pagesToVisit.formUnion(newUrls)
+    }
+
+    func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
+        print("Skipped \(url): \(reason)")
+    }
+
+    func crawler(_ crawler: Crawler) async -> URL? {
+        return pagesToVisit.popFirst()
+    }
+
+    func crawlerDidFinish(_ crawler: Crawler) async {
+        print("Finished! Visited \(visitedPages.count) pages")
+    }
 }
 
 // Use your custom delegate
-let crawler = Crawler(
-    startURL: URL(string: "https://example.com")!,
-    maximumPagesToVisit: 100,
-    wordToSearch: "swift"
+let delegate = MyCrawlerDelegate(
+    startUrl: URL(string: "https://example.com")!,
+    maximumPagesToVisit: 100
 )
-
-let delegate = CustomCrawlerDelegate()
-await crawler.setDelegate(delegate)
-await crawler.start()
+let crawler = Crawler(delegate: delegate)
+await crawler.start(url: URL(string: "https://example.com")!)
 ```
 
 ## Features
@@ -130,11 +191,15 @@ By default, Selenops only crawls URLs within the same domain as the start URL. T
 Selenops provides detailed progress tracking through its delegate methods:
 
 ```swift
-func crawler(_ crawler: Crawler, willVisitUrl url: URL) {
+func crawler(_ crawler: Crawler, willVisitUrl url: URL) async {
     print("Currently visiting: \(url)")
 }
 
-func crawlerDidFinish(_ crawler: Crawler) {
+func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
+    print("Skipped \(url): \(reason)")
+}
+
+func crawlerDidFinish(_ crawler: Crawler) async {
     print("Crawling completed")
 }
 ```
@@ -147,6 +212,64 @@ The delegate pattern allows for flexible data storage solutions:
 - Database storage
 - Distributed storage
 - Custom storage solutions
+
+## API Reference
+
+### CrawlerDelegate Protocol
+
+The `CrawlerDelegate` protocol defines the interface for receiving crawler events:
+
+| Method | Description |
+|--------|-------------|
+| `shouldVisitUrl(_:)` | Determines whether to visit a URL. Returns `Crawler.Decision` |
+| `willVisitUrl(_:)` | Called before visiting a URL |
+| `visit(_:)` | Fetches and processes content for a URL |
+| `didVisit(_:)` | Called after successfully visiting a URL |
+| `didFindLinks(_:at:)` | Called when links are extracted from a page |
+| `didSkip(_:reason:)` | Called when a URL is skipped |
+| `crawler(_:)` | Provides the next URL to visit |
+| `crawlerDidFinish(_:)` | Called when crawling is complete |
+
+### Crawler.Decision
+
+Controls whether a URL should be visited:
+
+```swift
+public enum Decision: Sendable {
+    case visit                    // URL should be visited
+    case skip(SkipReason)         // URL should be skipped
+}
+```
+
+### Crawler.SkipReason
+
+Describes why a URL was skipped:
+
+```swift
+public enum SkipReason: Sendable {
+    case invalidURL               // URL was invalid or malformed
+    case unsupportedFileType      // URL points to an unsupported file type
+    case businessLogic(String)    // Skipped due to business logic rules
+    case error(Error)             // Skipped due to an error
+}
+```
+
+### Crawler.Link
+
+Represents a discovered link:
+
+```swift
+public struct Link: Hashable, Sendable {
+    public var url: URL
+    public var title: String
+    public var score: Double?   // Relevance score (optional)
+}
+```
+
+### Utility Methods
+
+- `Crawler.detectEncoding(from:data:)` - Detects character encoding from HTTP response
+- `crawler.parseLinks(from:at:)` - Parses HTML and extracts links (call from `visit`)
 
 ## Dependencies
 
