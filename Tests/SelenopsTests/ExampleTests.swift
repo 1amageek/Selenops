@@ -37,27 +37,7 @@ public actor SampleExecutor: CrawlerDelegate {
 
     // MARK: - CrawlerDelegate
 
-    public func crawler(_ crawler: Crawler, fetchContentAt url: URL) async throws -> FetchResult {
-        let (data, response) = try await URLSession.shared.data(from: url)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw CrawlerError.invalidResponse
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw CrawlerError.httpError(httpResponse.statusCode)
-        }
-
-        let encoding = Crawler.detectEncoding(from: httpResponse, data: data)
-
-        guard let html = String(data: data, encoding: encoding) else {
-            throw CrawlerError.invalidEncoding
-        }
-
-        return FetchResult(content: html, html: html)
-    }
-
-    public func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Crawler.Decision {
+    public func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) async -> Crawler.Decision {
         guard let startHost = startUrl.host, let urlHost = url.host else {
             return .skip(.invalidURL)
         }
@@ -77,21 +57,35 @@ public actor SampleExecutor: CrawlerDelegate {
         return .visit
     }
 
-    public func crawler(_ crawler: Crawler, willVisitUrl url: URL) {
+    public func crawler(_ crawler: Crawler, willVisitUrl url: URL) async {
         print("Fetching \(url) (\(visitedPages.count + 1)/\(maximumPagesToVisit))")
     }
 
-    public func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
-        print("⏭️ Skipped \(url): \(reason)")
-    }
+    public func crawler(_ crawler: Crawler, visit url: URL) async throws {
+        let (data, response) = try await URLSession.shared.data(from: url)
 
-    public func crawlerDidFinish(_ crawler: Crawler) {
-        print("🏁 Finished! Visited pages: \(visitedPages.count)")
-        print("🔍 Found \(matchCount) pages containing '\(wordToSearch)'")
-    }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CrawlerError.invalidResponse
+        }
 
-    public func crawler(_ crawler: Crawler) async -> URL? {
-        return pagesToVisit.popFirst()
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw CrawlerError.httpError(httpResponse.statusCode)
+        }
+
+        let encoding = Crawler.detectEncoding(from: httpResponse, data: data)
+
+        guard let html = String(data: data, encoding: encoding) else {
+            throw CrawlerError.invalidEncoding
+        }
+
+        // Check for word match
+        if html.localizedCaseInsensitiveContains(wordToSearch) {
+            matchCount += 1
+            print("✨ Found '\(wordToSearch)' at: \(url.absoluteString)")
+        }
+
+        // Parse links
+        await crawler.parseLinks(from: html, at: url)
     }
 
     public func crawler(_ crawler: Crawler, didVisit url: URL) async {
@@ -105,10 +99,16 @@ public actor SampleExecutor: CrawlerDelegate {
         pagesToVisit.formUnion(newUrls)
     }
 
-    public func crawler(_ crawler: Crawler, didFetchContent result: FetchResult, at url: URL) async {
-        if result.content.localizedCaseInsensitiveContains(wordToSearch) {
-            matchCount += 1
-            print("✨ Found '\(wordToSearch)' at: \(url.absoluteString)")
-        }
+    public func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
+        print("⏭️ Skipped \(url): \(reason)")
+    }
+
+    public func crawler(_ crawler: Crawler) async -> URL? {
+        return pagesToVisit.popFirst()
+    }
+
+    public func crawlerDidFinish(_ crawler: Crawler) async {
+        print("🏁 Finished! Visited pages: \(visitedPages.count)")
+        print("🔍 Found \(matchCount) pages containing '\(wordToSearch)'")
     }
 }

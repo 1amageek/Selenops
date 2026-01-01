@@ -27,14 +27,7 @@ final actor MockCrawlerDelegate: CrawlerDelegate {
         injectedContent[url] = content
     }
 
-    func crawler(_ crawler: Crawler, fetchContentAt url: URL) async throws -> FetchResult {
-        guard let html = injectedContent[url] else {
-            throw CrawlerError.invalidResponse
-        }
-        return FetchResult(content: html, html: html)
-    }
-
-    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Crawler.Decision {
+    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) async -> Crawler.Decision {
         guard let startHost = startUrl.host,
               let urlHost = url.host else {
             return .skip(.invalidURL)
@@ -55,20 +48,20 @@ final actor MockCrawlerDelegate: CrawlerDelegate {
         return .visit
     }
 
-    func crawler(_ crawler: Crawler, willVisitUrl url: URL) {}
+    func crawler(_ crawler: Crawler, willVisitUrl url: URL) async {}
 
-    func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
-        urlsSkipped.append((url, reason))
-    }
+    func crawler(_ crawler: Crawler, visit url: URL) async throws {
+        guard let html = injectedContent[url] else {
+            throw CrawlerError.invalidResponse
+        }
 
-    func crawler(_ crawler: Crawler) async -> URL? {
-        return pagesToVisit.popFirst()
-    }
-
-    func crawler(_ crawler: Crawler, didFetchContent result: FetchResult, at url: URL) async {
-        if result.content.localizedCaseInsensitiveContains(wordToSearch) {
+        // Check for word match
+        if html.localizedCaseInsensitiveContains(wordToSearch) {
             urlsFoundWord.append(url)
         }
+
+        // Parse links
+        await crawler.parseLinks(from: html, at: url)
     }
 
     func crawler(_ crawler: Crawler, didVisit url: URL) async {
@@ -82,7 +75,15 @@ final actor MockCrawlerDelegate: CrawlerDelegate {
         pagesToVisit.formUnion(newUrls)
     }
 
-    func crawlerDidFinish(_ crawler: Crawler) {
+    func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
+        urlsSkipped.append((url, reason))
+    }
+
+    func crawler(_ crawler: Crawler) async -> URL? {
+        return pagesToVisit.popFirst()
+    }
+
+    func crawlerDidFinish(_ crawler: Crawler) async {
         didFinishCrawling = true
     }
 }

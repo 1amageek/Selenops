@@ -1,106 +1,6 @@
 import Foundation
 import SwiftSoup
 
-/// Errors that can occur during crawling
-public enum CrawlerError: Error {
-    case invalidResponse
-    case httpError(Int)
-    case invalidEncoding
-    case parseError(Error)
-}
-
-/// Represents the result of fetching content from a URL.
-public struct FetchResult: Sendable {
-    /// The fetched content (HTML, Markdown, or other text format).
-    public let content: String
-
-    /// The original HTML content, if available. Used for link extraction.
-    public let html: String?
-
-    public init(content: String, html: String? = nil) {
-        self.content = content
-        self.html = html
-    }
-}
-
-/// A protocol that receives crawler-related events and manages crawling data.
-///
-/// Implement this protocol to receive notifications about crawler events and manage the crawler's data storage.
-/// The delegate is responsible for managing the URLs to visit and keeping track of visited URLs.
-public protocol CrawlerDelegate: Actor {
-    /// Fetches content from the specified URL.
-    ///
-    /// This method allows developers to customize how content is retrieved.
-    /// For example, you can use Remark to convert HTML to Markdown, or use
-    /// a custom fetching strategy for JavaScript-rendered pages.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler requesting the content.
-    ///   - url: The URL to fetch content from.
-    /// - Returns: A `FetchResult` containing the content and optionally the original HTML.
-    /// - Throws: An error if the content cannot be fetched.
-    func crawler(_ crawler: Crawler, fetchContentAt url: URL) async throws -> FetchResult
-
-    /// Determines whether the crawler should visit the specified URL.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler requesting permission to visit.
-    ///   - url: The URL to potentially visit.
-    /// - Returns: `.visit` if the URL should be visited, or `.skip` with a reason if it should be skipped.
-    func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) -> Crawler.Decision
-
-    /// Notifies the delegate that the crawler will visit the specified URL.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler that will perform the visit.
-    ///   - url: The URL to be visited.
-    func crawler(_ crawler: Crawler, willVisitUrl url: URL)
-
-    /// Notifies the delegate that the crawler has finished its execution.
-    ///
-    /// - Parameter crawler: The crawler that finished execution.
-    func crawlerDidFinish(_ crawler: Crawler) async
-
-    /// Provides the next URL to be visited by the crawler.
-    ///
-    /// - Parameter crawler: The crawler requesting the next URL.
-    /// - Returns: The next URL to visit, or `nil` if there are no more URLs to visit.
-    func crawler(_ crawler: Crawler) async -> URL?
-
-    /// Notifies the delegate that the crawler has fetched content at the specified URL.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler that fetched the content.
-    ///   - url: The URL associated with the content.
-    ///   - result: The fetch result containing the content.
-    func crawler(_ crawler: Crawler, didFetchContent result: FetchResult, at url: URL) async
-
-    /// Records that a URL has been visited by the crawler.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler that visited the URL.
-    ///   - url: The URL that was visited.
-    func crawler(_ crawler: Crawler, didVisit url: URL) async
-
-    /// Adds new links discovered during crawling.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler that found the links.
-    ///   - links: An array of `Link` objects containing URLs, titles, and optional scores.
-    ///   - url: The URL of the page where the links were found.
-    func crawler(_ crawler: Crawler, didFindLinks links: Set<Crawler.Link>, at url: URL) async
-
-    /// Notifies the delegate that the crawler has skipped the specified URL.
-    ///
-    /// Called when `shouldVisitUrl` returns `false` or when the URL is determined to be invalid.
-    ///
-    /// - Parameters:
-    ///   - crawler: The crawler that skipped the URL.
-    ///   - url: The URL that was skipped.
-    ///   - reason: The reason why the URL was skipped.
-    func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async
-}
-
 /// A web crawler that searches for specific words across web pages.
 ///
 /// `Crawler` performs web crawling operations starting from a specified URL,
@@ -148,7 +48,7 @@ public final class Crawler: Sendable {
     public init(delegate: any CrawlerDelegate) {
         self.delegate = delegate
     }
-    
+
     /// Starts the crawling process.
     ///
     /// This method initiates the crawling process from the `startURL`.
@@ -157,7 +57,7 @@ public final class Crawler: Sendable {
     public func start(url: URL) async {
         await crawl(url: url)
     }
-    
+
     /// Performs the crawling operation.
     ///
     /// This method manages the main crawling loop, requesting URLs from the delegate
@@ -169,7 +69,7 @@ public final class Crawler: Sendable {
         case .skip(let reason):
             await delegate.crawler(self, didSkip: url, reason: reason)
         }
-        
+
         while let pageToVisit = await delegate.crawler(self) {
             switch await delegate.crawler(self, shouldVisitUrl: pageToVisit) {
             case .visit:
@@ -181,92 +81,85 @@ public final class Crawler: Sendable {
         }
         await delegate.crawlerDidFinish(self)
     }
-    
+
     /// Visits a specific webpage.
     ///
     /// - Parameter url: The URL of the page to visit.
     private func visit(page url: URL) async {
         do {
             await delegate.crawler(self, willVisitUrl: url)
-
-            // Delegate handles content fetching - allows custom strategies like Remark
-            let result = try await delegate.crawler(self, fetchContentAt: url)
-
-            await delegate.crawler(self, didFetchContent: result, at: url)
-
-            // Use HTML for link extraction if available, otherwise use content
-            let htmlForParsing = result.html ?? result.content
-            await parse(htmlForParsing, url: url)
-
+            try await delegate.crawler(self, visit: url)
             await delegate.crawler(self, didVisit: url)
         } catch {
             await delegate.crawler(self, didSkip: url, reason: .error(error))
         }
     }
-    
-    /// Parses webpage content and extracts relevant information.
+
+    /// Parses webpage content and extracts links.
+    ///
+    /// Call this method from your delegate's `visit` implementation to extract links from HTML.
     ///
     /// - Parameters:
-    ///   - webpage: The HTML content to parse.
+    ///   - html: The HTML content to parse.
     ///   - url: The URL associated with the content.
-    private func parse(_ webpage: String, url: URL) async {
+    public func parseLinks(from html: String, at url: URL) async {
         do {
-            let document = try SwiftSoup.parse(webpage, url.absoluteString)
+            let document = try SwiftSoup.parse(html, url.absoluteString)
             let anchorElements = try document.select("a").array()
             var links: Set<Link> = []
-            
+
             // Get base host to use as a reference if needed
             let baseHost = url.host
-            
+
             for anchor in anchorElements {
                 // Retrieve the href attribute and interpret it as a URL
                 let href = try anchor.attr("href")
                 guard let resolvedURL = URL(string: href, relativeTo: url)?.absoluteURL else { continue }
-                
+
                 // If a base host is available, use it as a filter criterion
                 if let resolvedHost = resolvedURL.host, let baseHost = baseHost, resolvedHost != baseHost {
                     continue
                 }
-                
+
                 // Normalize the URL by removing fragments and query parameters
                 var urlComponents = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: true)
                 urlComponents?.fragment = nil
                 urlComponents?.queryItems = nil
 
                 guard let normalizedURL = urlComponents?.url else { continue }
-                
+
                 // Determine title based on priority: aria-label > img[alt] > title > text content > normalized URL
                 var title = try anchor.attr("aria-label").trimmingCharacters(in: .whitespacesAndNewlines)
-                
+
                 if title.isEmpty, let img = try anchor.select("img[alt]").first() {
                     title = try img.attr("alt").trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                
+
                 if title.isEmpty {
                     title = try anchor.attr("title").trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                
+
                 if title.isEmpty {
                     title = try anchor.text().trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                
+
                 // If no title is found, use the normalized URL as the title
                 if title.isEmpty {
                     title = normalizedURL.absoluteString
                 }
-                
+
                 let link = Link(url: normalizedURL, title: title, score: nil)
                 links.insert(link)
             }
-            
+
             // Notify the delegate with the extracted links
             await delegate.crawler(self, didFindLinks: links, at: url)
-            
+
         } catch {
             print("Error parsing \(url): \(error)")
         }
     }
-    
+
     /// Detects the character encoding from HTTP response headers and HTML meta tags.
     ///
     /// This utility method can be used by delegates implementing custom content fetching.
@@ -297,7 +190,7 @@ public final class Crawler: Sendable {
                 break
             }
         }
-        
+
         // If Content-Type header doesn't specify encoding, try to detect from meta tags
         // Use isoLatin1 as it can decode any byte sequence without failing
         if let content = String(data: data, encoding: .isoLatin1),
@@ -305,7 +198,7 @@ public final class Crawler: Sendable {
             let startIndex = metaCharset.upperBound
             let endIndex = content[startIndex...].firstIndex(where: { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "_" }) ?? content.endIndex
             let charset = content[startIndex..<endIndex].lowercased()
-            
+
             switch charset {
             case "shift_jis", "shift-jis", "shiftjis":
                 return .shiftJIS
@@ -319,7 +212,7 @@ public final class Crawler: Sendable {
                 break
             }
         }
-        
+
         // Default to UTF-8 if no encoding is specified
         return .utf8
     }
