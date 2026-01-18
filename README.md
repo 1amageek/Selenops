@@ -18,13 +18,13 @@ Selenops is a lightweight, Swift-based web crawler that efficiently searches for
 
 ## Features
 
-- ✨ Built with Swift Concurrency (async/await)
-- 🔍 Efficient word search across web pages
-- 🛡️ Safe concurrent operations with Actor model
-- 🎯 Domain-specific crawling
-- 📊 Progress tracking
-- 🔌 Extensible delegate pattern for data management
-- 📱 Command-line interface tool included
+- Built with Swift Concurrency (async/await)
+- Efficient word search across web pages
+- Safe concurrent operations with Actor model
+- Flexible link extraction (same-domain or cross-domain)
+- Progress tracking
+- Extensible delegate pattern for data management
+- Command-line interface tool included
 
 ## Requirements
 
@@ -94,7 +94,7 @@ import Selenops
 
 actor MyCrawlerDelegate: CrawlerDelegate {
     private var visitedPages: Set<URL> = []
-    private var pagesToVisit: Set<URL> = []
+    private var pagesToVisit: [URL] = []
     let startUrl: URL
     let maximumPagesToVisit: Int
 
@@ -104,10 +104,14 @@ actor MyCrawlerDelegate: CrawlerDelegate {
     }
 
     func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) async -> Crawler.Decision {
+        // Implement your filtering logic here
+        // This is where you decide which URLs to visit
+
         guard let startHost = startUrl.host, let urlHost = url.host else {
             return .skip(.invalidURL)
         }
 
+        // Example: Same-domain filtering
         if urlHost != startHost {
             return .skip(.businessLogic("Different domain"))
         }
@@ -143,7 +147,7 @@ actor MyCrawlerDelegate: CrawlerDelegate {
         // Process your content here
         // ...
 
-        // Parse and collect links
+        // Parse and collect links (extracts all HTTP(S) links)
         await crawler.parseLinks(from: html, at: url)
     }
 
@@ -152,10 +156,12 @@ actor MyCrawlerDelegate: CrawlerDelegate {
     }
 
     func crawler(_ crawler: Crawler, didFindLinks links: Set<Crawler.Link>, at url: URL) async {
+        // All HTTP(S) links are reported here
+        // Filter as needed for your use case
         let newUrls = links.map(\.url).filter { url in
             !visitedPages.contains(url) && !pagesToVisit.contains(url)
         }
-        pagesToVisit.formUnion(newUrls)
+        pagesToVisit.append(contentsOf: newUrls)
     }
 
     func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
@@ -163,7 +169,8 @@ actor MyCrawlerDelegate: CrawlerDelegate {
     }
 
     func crawler(_ crawler: Crawler) async -> URL? {
-        return pagesToVisit.popFirst()
+        guard !pagesToVisit.isEmpty else { return nil }
+        return pagesToVisit.removeFirst()
     }
 
     func crawlerDidFinish(_ crawler: Crawler) async {
@@ -180,13 +187,92 @@ let crawler = Crawler(delegate: delegate)
 await crawler.start(url: URL(string: "https://example.com")!)
 ```
 
-## Features
+## Architecture
 
-### Domain-Specific Crawling
+Selenops follows a clear separation of concerns:
 
-By default, Selenops only crawls URLs within the same domain as the start URL. This behavior can be customized by implementing your own `shouldVisitUrl` logic in the delegate.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Crawler                               │
+│  - Manages crawl loop                                        │
+│  - Parses HTML and extracts ALL HTTP(S) links               │
+│  - Delegates decisions to CrawlerDelegate                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    CrawlerDelegate                           │
+│  - shouldVisitUrl: Decides which URLs to visit              │
+│  - visit: Fetches content (you implement HTTP logic)        │
+│  - didFindLinks: Receives all extracted links               │
+│  - Manages URL queue and visited set                        │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Progress Tracking
+**Key Design Principle**: The `parseLinks` method extracts all HTTP(S) links without filtering. The delegate's `shouldVisitUrl` method is responsible for deciding which links to actually visit. This separation allows for flexible crawling strategies:
+
+- **Same-domain crawling**: Filter by host in `shouldVisitUrl`
+- **Cross-domain crawling**: Accept all URLs in `shouldVisitUrl`
+- **Allowlist/Blocklist**: Implement custom logic in `shouldVisitUrl`
+
+## Use Cases
+
+### Same-Domain Crawling
+
+For crawling within a single website:
+
+```swift
+func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) async -> Crawler.Decision {
+    guard let startHost = startUrl.host, let urlHost = url.host else {
+        return .skip(.invalidURL)
+    }
+
+    // Only visit URLs on the same domain
+    if urlHost != startHost {
+        return .skip(.businessLogic("Different domain"))
+    }
+
+    return .visit
+}
+```
+
+### Cross-Domain Crawling
+
+For crawling across multiple domains (e.g., following search results):
+
+```swift
+func crawler(_ crawler: Crawler, shouldVisitUrl url: URL) async -> Crawler.Decision {
+    // Visit any HTTP(S) URL
+    guard let scheme = url.scheme, ["http", "https"].contains(scheme) else {
+        return .skip(.invalidURL)
+    }
+
+    // Optional: Block specific domains
+    let blockedDomains = ["facebook.com", "twitter.com"]
+    if let host = url.host, blockedDomains.contains(where: { host.contains($0) }) {
+        return .skip(.businessLogic("Blocked domain"))
+    }
+
+    return .visit
+}
+```
+
+### Search Result Extraction
+
+For extracting links from search engine results:
+
+```swift
+func crawler(_ crawler: Crawler, didFindLinks links: Set<Crawler.Link>, at url: URL) async {
+    // Collect all external links from search results
+    for link in links {
+        if !visitedPages.contains(link.url) {
+            pagesToVisit.append(link.url)
+        }
+    }
+}
+```
+
+## Progress Tracking
 
 Selenops provides detailed progress tracking through its delegate methods:
 
@@ -204,7 +290,7 @@ func crawlerDidFinish(_ crawler: Crawler) async {
 }
 ```
 
-### Data Management
+## Data Management
 
 The delegate pattern allows for flexible data storage solutions:
 
@@ -225,7 +311,7 @@ The `CrawlerDelegate` protocol defines the interface for receiving crawler event
 | `willVisitUrl(_:)` | Called before visiting a URL |
 | `visit(_:)` | Fetches and processes content for a URL |
 | `didVisit(_:)` | Called after successfully visiting a URL |
-| `didFindLinks(_:at:)` | Called when links are extracted from a page |
+| `didFindLinks(_:at:)` | Called when links are extracted from a page (all HTTP(S) links) |
 | `didSkip(_:reason:)` | Called when a URL is skipped |
 | `crawler(_:)` | Provides the next URL to visit |
 | `crawlerDidFinish(_:)` | Called when crawling is complete |
@@ -268,8 +354,10 @@ public struct Link: Hashable, Sendable {
 
 ### Utility Methods
 
-- `Crawler.detectEncoding(from:data:)` - Detects character encoding from HTTP response
-- `crawler.parseLinks(from:at:)` - Parses HTML and extracts links (call from `visit`)
+| Method | Description |
+|--------|-------------|
+| `Crawler.detectEncoding(from:data:)` | Detects character encoding from HTTP response headers and meta tags |
+| `crawler.parseLinks(from:at:)` | Parses HTML and extracts all HTTP(S) links |
 
 ## Dependencies
 
@@ -290,14 +378,15 @@ Selenops is named after a genus of spiders known for their speed and agility. Li
 
 ## Credits
 
-Selenops was built by [Federico Zanetello](https://twitter.com/zntfdr) as an [example of a Swift script][selenopsArticle].
-[@1amageek](https://github.com/1amageek)
+Selenops was originally built by [Federico Zanetello](https://twitter.com/zntfdr) as an [example of a Swift script][selenopsArticle].
+
+Maintained and enhanced by [@1amageek](https://github.com/1amageek).
 
 ## Contributions and Support
 
-All users are welcome and encouraged to become active participants in the project continued development — by fixing any bug that they encounter, or by improving the documentation wherever it’s found to be lacking.
+All users are welcome and encouraged to become active participants in the project continued development — by fixing any bug that they encounter, or by improving the documentation wherever it's found to be lacking.
 
-If you'd like to make a change, please [open a Pull Request](https://github.com/zntfdr/Selenops/pull/new), even if it just contains a draft of the changes you’re planning, or a test that reproduces an issue.
+If you'd like to make a change, please [open a Pull Request](https://github.com/1amageek/Selenops/pull/new), even if it just contains a draft of the changes you're planning, or a test that reproduces an issue.
 
 Thank you and please enjoy using **Selenops**!
 

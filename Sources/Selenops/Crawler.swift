@@ -108,18 +108,14 @@ public final class Crawler: Sendable {
             let anchorElements = try document.select("a").array()
             var links: Set<Link> = []
 
-            // Get base host to use as a reference if needed
-            let baseHost = url.host
-
             for anchor in anchorElements {
                 // Retrieve the href attribute and interpret it as a URL
                 let href = try anchor.attr("href")
                 guard let resolvedURL = URL(string: href, relativeTo: url)?.absoluteURL else { continue }
 
-                // If a base host is available, use it as a filter criterion
-                if let resolvedHost = resolvedURL.host, let baseHost = baseHost, resolvedHost != baseHost {
-                    continue
-                }
+                // Skip non-HTTP(S) URLs (mailto:, javascript:, tel:, etc.)
+                guard let scheme = resolvedURL.scheme?.lowercased(),
+                      ["http", "https"].contains(scheme) else { continue }
 
                 // Normalize the URL by removing fragments and query parameters
                 var urlComponents = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: true)
